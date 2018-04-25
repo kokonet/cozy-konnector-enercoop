@@ -5,6 +5,7 @@ const stream = require('stream')
 const baseUrl = 'https://espace-client.enercoop.fr'
 const loginUrl = baseUrl + '/login'
 const billUrl = baseUrl + '/mon-espace/factures/'
+const consumptionUrl = baseUrl + '/mon-espace/consommation/'
 moment.locale('fr')
 
 let rq = requestFactory({
@@ -16,12 +17,8 @@ let rq = requestFactory({
 
 module.exports = new BaseKonnector(function fetch (fields) {
   return logIn(fields)
-  .then(parsePage)
-  .then(entries => saveBills(entries, fields.folderPath, {
-    timeout: Date.now() + 60 * 1000,
-    identifiers: ['Enercoop'],
-    contentType: 'application/pdf'
-  }))
+  // .then(() => fetchBills(fields))
+  .then(() => fetchConsumption(fields))
 })
 
 // Procedure to login to Enercoop website.
@@ -48,13 +45,40 @@ function logIn (fields) {
       throw new Error('LOGIN_FAILED')
     }
 
-    const url = `${billUrl}`
-    return rq(url)
-    .catch(err => {
-      console.log(err, 'authentication error details')
-      throw new Error('LOGIN_FAILED')
-    })
   })
+}
+
+function fetchBills (fields) {
+  return rq(billUrl)
+  .then(parsePage)
+  .then(entries => saveBills(entries, fields.folderPath, {
+    timeout: Date.now() + 60 * 1000,
+    identifiers: ['Enercoop'],
+    contentType: 'application/pdf'
+  }))
+}
+
+const measuresRegExp = /JSON\.parse\( "(.+)" \)/
+
+async function fetchConsumption () {
+  const $ = await rq(consumptionUrl)
+  const jsCode = $('script').filter((i, script) => $(script).attr('src') == null).html()
+  const match = jsCode.match(measuresRegExp)
+  if (match == null) throw new Error('No measures found')
+  const jsonString = match[1]
+    .replace(/\\x22/g, '"')
+    .replace(/\\x3A/g, ':')
+    .replace(/\\x5B/g, '[')
+    .replace(/\\x7B/g, '{')
+    .replace(/\\x5C\\x2F/g, '/')
+    .replace(/\\x5D/g, ']')
+    .replace(/\\x7D/g, '}')
+    .replace(/\\x7D/g, '}')
+    .replace(/\\x5Cu00e8/g, 'è')
+    .replace(/\\x5Cu00e9/g, 'é')
+  // const measures = JSON.parse(jsonString)
+  log('info', JSON.parse(jsonString))
+
 }
 
 // Parse the fetched DOM page to extract bill data.
